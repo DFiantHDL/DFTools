@@ -45,7 +45,7 @@ Stage: final
     apt-get install -y --no-install-recommends \
         ca-certificates \
         libstdc++6 libgcc-s1 zlib1g \
-        libftdi1-2 libhidapi-hidraw0 libusb-1.0-0 libudev1
+        libftdi1-2 libhidapi-libusb0 libhidapi-hidraw0 libusb-1.0-0 libudev1
     rm -rf /var/lib/apt/lists/*
 
 %environment

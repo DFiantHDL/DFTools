@@ -74,5 +74,5 @@ Stage: final
     set -e
     export PATH=/opt/dftools/bin:$PATH
     yosys -V
-    yosys -p 'help read_slang' >/dev/null
+    yosys -m slang -p 'help read_slang' >/dev/null
     eqy --version || true

@@ -32,10 +32,10 @@ Stage: build
         && cmake -DCMAKE_INSTALL_PREFIX=$PREFIX -G Ninja . \
         && ninja && ninja install )
 
-    # Apicula -> gowin_pack + Gowin chip DB (Python). VALIDATE: from-source DB build;
-    # the PyPI `apycula` ships prebuilt DBs if a source DB build is problematic.
-    clone https://github.com/YosysHQ/apicula "$APICULA_REV" apicula
-    ( cd /src/apicula && pip install --no-cache-dir . )
+    # Apicula -> gowin_pack + prebuilt Gowin chip DBs. Installed from PyPI: the reverse-engineered
+    # databases (*.msgpack.xz) are data artifacts not rebuildable from source without vendor tools,
+    # and nextpnr's himbaechel/gowin chipdb generation reads them from the installed apycula package.
+    pip install --no-cache-dir "apycula==${APICULA_REV}"
 
     # nextpnr: one build with both arches (ECP5 + Himbaechel/Gowin).
     clone https://github.com/YosysHQ/nextpnr "$NEXTPNR_REV" nextpnr --recursive
@@ -64,7 +64,7 @@ Stage: final
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends \
-        ca-certificates python3 \
+        ca-certificates python3 libpython3.12t64 \
         libstdc++6 libgcc-s1 zlib1g \
         libboost-filesystem1.83.0 libboost-program-options1.83.0 \
         libboost-thread1.83.0 libboost-iostreams1.83.0

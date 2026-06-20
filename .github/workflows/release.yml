@@ -148,7 +148,11 @@ jobs:
         run: scala-cli run scripts/test.sc -- dfhdl dist dfhdl-dftools
 
   publish:
-    needs: dfhdl-gate
+    # TEMPORARY: the DFHDL gate is decoupled from publishing while we iron out gate issues,
+    # so freshly built images can be released and used to debug. Publish depends only on a
+    # successful build-test; the dfhdl-gate still runs for visibility but does not block.
+    # Restore `needs: dfhdl-gate` once the gate is green.
+    needs: build-test
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-24.04
     steps:

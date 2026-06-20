@@ -1,0 +1,121 @@
+name: build-test-release
+
+# DFTools release pipeline, independent of the DFHDL library release.
+#
+#   build  ->  test (DFHDL latest release + main, against the freshly built image)
+#          ->  publish (only if every arch's tests pass)
+#
+# Bumping a pin in pins.env (or editing DFTools.def) triggers a build+test run.
+# Publishing happens on a version tag (v*) or a manual dispatch with `publish=true`.
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'pins.env', 'DFTools.def', 'build/**', 'scripts/**', '.github/workflows/release.yml' ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a release from this run'
+        type: boolean
+        default: false
+      version:
+        description: 'Release version tag (e.g. v0.1.0); required when publish=true'
+        required: false
+
+permissions:
+  contents: write   # needed to create the GitHub Release
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: linux-x64
+            runs-on: ubuntu-24.04
+          - arch: linux-arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          large-packages: true
+          docker-images: true
+
+      - name: Setup Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+
+      - name: Setup JDK + Scala CLI
+        uses: VirtusLab/scala-cli-setup@v1
+        with:
+          jvm: temurin:21
+
+      - name: Build DFTools image
+        run: |
+          set -euo pipefail
+          scala-cli run scripts/build.sc -- dftools-${{ matrix.arch }}.sif
+          sha256sum dftools-${{ matrix.arch }}.sif > dftools-${{ matrix.arch }}.sif.sha256
+
+      # --- Test gate: run DFHDL against the freshly built image ---------------
+      # Requires the DFHDL-side DFTools integration (tools-location option +
+      # `dfhdl.dftools.sif` override). Tests BOTH the latest DFHDL release and main.
+      - name: Check out DFHDL (latest release + main)
+        run: |
+          set -euo pipefail
+          git clone https://github.com/DFiantHDL/dfhdl.git dfhdl-main
+          git clone https://github.com/DFiantHDL/dfhdl.git dfhdl-release
+          ( cd dfhdl-release && git checkout "$(git describe --tags --abbrev=0)" )
+
+      - name: Test against DFHDL latest release
+        run: scala-cli run scripts/test.sc -- dftools-${{ matrix.arch }}.sif dfhdl-release
+
+      - name: Test against DFHDL main
+        run: scala-cli run scripts/test.sc -- dftools-${{ matrix.arch }}.sif dfhdl-main
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dftools-${{ matrix.arch }}
+          path: |
+            dftools-${{ matrix.arch }}.sif
+            dftools-${{ matrix.arch }}.sif.sha256
+            dftools-${{ matrix.arch }}.MANIFEST.txt
+          retention-days: 7
+
+  publish:
+    needs: build-test
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: DFTools ${{ steps.ver.outputs.tag }}
+          body_path: dist/dftools-linux-x64.MANIFEST.txt
+          files: |
+            dist/dftools-linux-x64.sif
+            dist/dftools-linux-x64.sif.sha256
+            dist/dftools-linux-arm64.sif
+            dist/dftools-linux-arm64.sif.sha256
+            dist/*.MANIFEST.txt

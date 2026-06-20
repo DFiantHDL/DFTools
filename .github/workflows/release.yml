@@ -36,7 +36,7 @@ jobs:
     outputs:
       images: ${{ steps.set.outputs.images }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: set
@@ -68,7 +68,7 @@ jobs:
             runs-on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Free up disk space
         uses: jlumbroso/free-disk-space@main
         with: { tool-cache: true, large-packages: true, docker-images: true }
@@ -92,7 +92,7 @@ jobs:
           sha256sum dftools-${{ matrix.image }}-${{ matrix.arch }}.sif > dftools-${{ matrix.image }}-${{ matrix.arch }}.sif.sha256
       - name: Probe image
         run: scala-cli run scripts/test.sc -- probe ${{ matrix.image }} dftools-${{ matrix.image }}-${{ matrix.arch }}.sif
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dftools-${{ matrix.image }}-${{ matrix.arch }}
           path: |
@@ -113,7 +113,7 @@ jobs:
             runs-on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Official upstream PPA — covers both amd64 and arm64 on noble and tracks the
       # current 1.5.x (matches what we build/run with locally). The setup-apptainer
       # action only ships an amd64 .deb and fails on the arm64 runner.
@@ -128,12 +128,12 @@ jobs:
       # scala-cli is added only to run this repo's gate driver (scripts/test.sc), which
       # then invokes `sbt testApps` inside the DFHDL checkout on the same JAVA_HOME.
       - name: Setup Scala
-        uses: coursier/setup-action@v1
+        uses: coursier/setup-action@v3
         with:
           jvm: temurin:1.17.0.14
           apps: sbt bloop scala-cli
       - name: Download freshly built images (this arch)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: dftools-*-${{ matrix.arch }}
           path: dist
@@ -152,7 +152,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { path: dist, merge-multiple: true }
       - id: ver
         run: |
@@ -161,7 +161,7 @@ jobs:
       # Attach the freshly built per-image sifs to the release tag. Only rebuilt images are
       # refreshed; previously published image assets on the same tag are left intact.
       - name: Publish image assets to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: DFTools ${{ steps.ver.outputs.tag }}

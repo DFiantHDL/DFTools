@@ -8,9 +8,10 @@
 //       Run the image's %test block and per-tool version probes inside the image.
 //
 //   scala-cli run scripts/test.sc -- dfhdl <sif-dir> <dfhdl-checkout-dir>
-//       Full DFHDL gate: discover every dftools-<image>.sif under <sif-dir>, point DFHDL
-//       at each via `-Ddfhdl.dftools.sif.<image>=<path>`, and run the toolchain-touching
-//       suites (testApps). CI runs this for the latest DFHDL release tag and for `main`.
+//       DFHDL gate: discover every dftools-<image>.sif under <sif-dir>, point DFHDL at each
+//       via `-Ddfhdl.dftools.sif.<image>=<path>`, and run the DFHDL unit-test suite (`test`)
+//       against the checkout. The per-image self-tests already ran in the build-test job
+//       (probe mode); this gate confirms the DFHDL build is healthy against these images.
 
 import scalapptainer.*
 
@@ -58,13 +59,17 @@ args(0) match
     }
     require(overrides.nonEmpty, s"no dftools-*.sif found under $sifDir")
     // local dev on Windows uses the fast sbt client; CI (Linux) uses plain `sbt`, the
-    // same launcher DFHDL's own CI runs (`sbt testApps`).
+    // same launcher DFHDL's own CI runs.
     val sbtCmd = if scala.util.Properties.isWin then "sbtn.bat" else "sbt"
-    val jvmOpts = overrides.mkString(" ")
+    // Pass the per-image sif overrides as JVM system properties straight to the sbt
+    // launcher (it forwards leading -D args to the JVM). The `test` suite is pure
+    // code-generation/string-assertion munit tests and does not invoke external tools,
+    // but with the dftools default these props keep any image lookup pointed at the
+    // freshly built sifs rather than an unpublished release.
     println(s"[dftools-test] DFHDL gate in $dfhdlDir with:\n  ${overrides.mkString("\n  ")}")
-    val res = os.proc(sbtCmd, s"""set ThisBuild/javaOptions ++= "$jvmOpts".split(" ").toSeq""", "testApps")
+    val res = os.proc(sbtCmd, overrides, "test")
       .call(cwd = dfhdlDir, check = false, stdout = os.Inherit, stderr = os.Inherit)
-    require(res.exitCode == 0, s"DFHDL testApps failed (exit ${res.exitCode})")
+    require(res.exitCode == 0, s"DFHDL test failed (exit ${res.exitCode})")
     println("[dftools-test] DFHDL gate passed.")
 
   case other =>

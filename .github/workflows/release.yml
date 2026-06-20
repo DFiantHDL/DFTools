@@ -117,18 +117,14 @@ jobs:
           pattern: dftools-*-${{ matrix.arch }}
           path: dist
           merge-multiple: true
-      - name: Check out DFHDL (latest release + main)
-        run: |
-          set -euo pipefail
-          git clone https://github.com/DFiantHDL/dfhdl.git dfhdl-main
-          git clone https://github.com/DFiantHDL/dfhdl.git dfhdl-release
-          ( cd dfhdl-release && git checkout "$(git describe --tags --abbrev=0)" )
+      # TEMPORARY: while the DFHDL DFTools integration lives on the `dftools` branch, gate
+      # only against that branch. Restore the latest-release + main gate once it is merged.
+      - name: Check out DFHDL (dftools branch)
+        run: git clone --branch dftools --depth 1 https://github.com/DFiantHDL/dfhdl.git dfhdl-dftools
       # Sifs are named dftools-<image>-<arch>.sif; test.sc maps each to the per-image override.
       # Images not rebuilt in this run fall back to DFHDL's published-release resolution.
-      - name: Gate against DFHDL latest release
-        run: scala-cli run scripts/test.sc -- dfhdl dist dfhdl-release
-      - name: Gate against DFHDL main
-        run: scala-cli run scripts/test.sc -- dfhdl dist dfhdl-main
+      - name: Gate against DFHDL dftools branch
+        run: scala-cli run scripts/test.sc -- dfhdl dist dfhdl-dftools
 
   publish:
     needs: dfhdl-gate

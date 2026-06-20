@@ -1,0 +1,77 @@
+# DFTools image: sim-llvm
+# LLVM-based VHDL simulators: NVC + GHDL. The two share the single LLVM runtime.
+# The ghdl here is the *simulator* ghdl, pinned independently (GHDL_SIM_REV) from the
+# synthesis-frontend ghdl in synth-vhdl.
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: build
+
+%files
+    pins.env /opt/pins.env
+    build/common.sh /opt/common.sh
+    build/strip-runtime.sh /opt/strip-runtime.sh
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    export PREFIX=/opt/dftools
+    . /opt/pins.env
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates git pkg-config \
+        build-essential gnat llvm-dev libclang-dev \
+        automake autoconf libtool flex bison check \
+        libdw-dev zlib1g-dev libzstd-dev libffi-dev libreadline-dev
+    rm -rf /var/lib/apt/lists/*
+    . /opt/common.sh
+    LLVM_CONFIG="$(llvm_config)"
+
+    # GHDL (simulator) — LLVM backend (x86_64 and aarch64)
+    clone https://github.com/ghdl/ghdl "$GHDL_SIM_REV" ghdl
+    ( cd /src/ghdl && ./configure --prefix=$PREFIX --with-llvm-config="$LLVM_CONFIG" \
+        && make -j"$NPROC" && make install )
+
+    # NVC
+    clone https://github.com/nickg/nvc "$NVC_REV" nvc
+    ( cd /src/nvc && ./autogen.sh && mkdir -p build && cd build \
+        && ../configure --prefix=$PREFIX --with-llvm="$LLVM_CONFIG" \
+        && make -j"$NPROC" && make install )
+
+    write_manifest sim-llvm
+    sh /opt/strip-runtime.sh $PREFIX
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: final
+
+%files from build
+    /opt/dftools /opt/dftools
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libstdc++6 libgcc-s1 libllvm18 \
+        zlib1g libzstd1 libffi8 libdw1 libreadline8t64
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/dftools/bin:$PATH
+    export LD_LIBRARY_PATH=/opt/dftools/lib:/opt/dftools/lib64:$LD_LIBRARY_PATH
+
+%labels
+    org.opencontainers.image.title DFTools/sim-llvm
+    org.opencontainers.image.source https://github.com/DFiantHDL/DFTools
+    org.opencontainers.image.licenses Apache-2.0
+
+%runscript
+    exec "$@"
+
+%test
+    set -e
+    export PATH=/opt/dftools/bin:$PATH
+    ghdl version | head -1
+    nvc --version

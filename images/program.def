@@ -1,0 +1,66 @@
+# DFTools image: program
+# openFPGALoader — universal FPGA/flash programmer. Small.
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: build
+
+%files
+    pins.env /opt/pins.env
+    build/common.sh /opt/common.sh
+    build/strip-runtime.sh /opt/strip-runtime.sh
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    export PREFIX=/opt/dftools
+    . /opt/pins.env
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates git pkg-config \
+        build-essential cmake ninja-build \
+        libftdi1-dev libhidapi-dev libudev-dev libusb-1.0-0-dev zlib1g-dev
+    rm -rf /var/lib/apt/lists/*
+    . /opt/common.sh
+
+    clone https://github.com/trabucayre/openFPGALoader "$OPENFPGALOADER_REV" openFPGALoader
+    ( cd /src/openFPGALoader \
+        && cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=$PREFIX -DCMAKE_BUILD_TYPE=Release \
+        && ninja -C build && ninja -C build install )
+
+    write_manifest program
+    sh /opt/strip-runtime.sh $PREFIX
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: final
+
+%files from build
+    /opt/dftools /opt/dftools
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libstdc++6 libgcc-s1 zlib1g \
+        libftdi1-2 libhidapi-hidraw0 libusb-1.0-0 libudev1
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/dftools/bin:$PATH
+    export LD_LIBRARY_PATH=/opt/dftools/lib:/opt/dftools/lib64:$LD_LIBRARY_PATH
+
+%labels
+    org.opencontainers.image.title DFTools/program
+    org.opencontainers.image.source https://github.com/DFiantHDL/DFTools
+    org.opencontainers.image.licenses Apache-2.0
+
+%runscript
+    exec "$@"
+
+%test
+    set -e
+    export PATH=/opt/dftools/bin:$PATH
+    openFPGALoader --Version || openFPGALoader -V

@@ -1,0 +1,78 @@
+# DFTools image: synth-verilog
+# Yosys Verilog/SystemVerilog synthesis (no VHDL/ghdl, so no LLVM) + eqy.
+# Multi-stage: heavy build stage -> minimal runtime stage (only /opt/dftools + runtime libs).
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: build
+
+%files
+    pins.env /opt/pins.env
+    build/common.sh /opt/common.sh
+    build/strip-runtime.sh /opt/strip-runtime.sh
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    export PREFIX=/opt/dftools
+    . /opt/pins.env
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates git pkg-config \
+        build-essential clang cmake ninja-build bison flex \
+        libreadline-dev tcl-dev libffi-dev zlib1g-dev \
+        python3 python3-dev python3-venv python3-pip
+    rm -rf /var/lib/apt/lists/*
+    . /opt/common.sh
+
+    # Yosys (--recursive pins bundled ABC via Yosys's submodule)
+    clone https://github.com/YosysHQ/yosys "$YOSYS_REV" yosys --recursive
+    ( cd /src/yosys && make config-gcc \
+        && make -j"$NPROC" PREFIX=$PREFIX ENABLE_LIBYOSYS=1 \
+        && make install PREFIX=$PREFIX )
+
+    # yosys-slang: SystemVerilog frontend plugin (bundles slang). VALIDATE: ABI vs YOSYS_REV.
+    clone https://github.com/povik/yosys-slang "$YOSYS_SLANG_REV" yosys-slang --recursive
+    ( cd /src/yosys-slang && make -j"$NPROC" install )
+
+    # eqy: equivalence-checking driver around yosys (Python + small helper)
+    clone https://github.com/YosysHQ/eqy "$EQY_REV" eqy
+    ( cd /src/eqy && make -j"$NPROC" PREFIX=$PREFIX && make install PREFIX=$PREFIX )
+
+    write_manifest synth-verilog
+    sh /opt/strip-runtime.sh $PREFIX
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: final
+
+%files from build
+    /opt/dftools /opt/dftools
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates python3 \
+        libstdc++6 libgcc-s1 zlib1g libreadline8t64 libffi8 libtcl8.6
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/dftools/bin:/opt/dftools/pyenv/bin:$PATH
+    export LD_LIBRARY_PATH=/opt/dftools/lib:/opt/dftools/lib64:$LD_LIBRARY_PATH
+
+%labels
+    org.opencontainers.image.title DFTools/synth-verilog
+    org.opencontainers.image.source https://github.com/DFiantHDL/DFTools
+    org.opencontainers.image.licenses Apache-2.0
+
+%runscript
+    exec "$@"
+
+%test
+    set -e
+    export PATH=/opt/dftools/bin:$PATH
+    yosys -V
+    yosys -p 'help read_slang' >/dev/null
+    eqy --version || true

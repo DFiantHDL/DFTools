@@ -1,0 +1,70 @@
+# DFTools image: wavegen
+# Surfer waveform viewer (Rust GUI). Built with a throwaway rustup toolchain; only the
+# `surfer` binary is installed. GUI -> needs X11/Wayland/GL runtime libs (X11-forwarded
+# by the host via Scalapptainer's withX11()).
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: build
+
+%files
+    pins.env /opt/pins.env
+    build/common.sh /opt/common.sh
+    build/strip-runtime.sh /opt/strip-runtime.sh
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    export PREFIX=/opt/dftools
+    . /opt/pins.env
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates git curl xz-utils pkg-config \
+        build-essential cmake \
+        libfontconfig-dev libssl-dev
+    rm -rf /var/lib/apt/lists/*
+    . /opt/common.sh
+
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+    . "$HOME/.cargo/env"
+    clone https://gitlab.com/surfer-project/surfer "$SURFER_REV" surfer --recursive
+    ( cd /src/surfer && cargo build --release --locked -p surfer \
+        && install -Dm755 target/release/surfer $PREFIX/bin/surfer )
+
+    write_manifest wavegen
+    sh /opt/strip-runtime.sh $PREFIX
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: final
+
+%files from build
+    /opt/dftools /opt/dftools
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libstdc++6 libgcc-s1 libssl3 \
+        libgl1 libx11-6 libxext6 libxrender1 libxi6 libxkbcommon0 \
+        libwayland-client0 libfontconfig1 libfreetype6
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/dftools/bin:$PATH
+    export LD_LIBRARY_PATH=/opt/dftools/lib:/opt/dftools/lib64:$LD_LIBRARY_PATH
+
+%labels
+    org.opencontainers.image.title DFTools/wavegen
+    org.opencontainers.image.source https://github.com/DFiantHDL/DFTools
+    org.opencontainers.image.licenses Apache-2.0
+
+%runscript
+    exec "$@"
+
+%test
+    set -e
+    export PATH=/opt/dftools/bin:$PATH
+    surfer --version || true

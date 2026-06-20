@@ -1,20 +1,24 @@
 name: build-test-release
 
-# DFTools release pipeline, independent of the DFHDL library release.
+# DFTools per-image release pipeline, independent of the DFHDL library release.
 #
-#   build  ->  test (DFHDL latest release + main, against the freshly built image)
-#          ->  publish (only if every arch's tests pass)
+#   detect (which images changed)
+#     -> build-test (only affected images x arch; per-image self-test)
+#     -> dfhdl-gate (DFHDL latest release + main, against the freshly built images)
+#     -> publish (only on a version tag or manual dispatch, and only if the gate passed)
 #
-# Bumping a pin in pins.env (or editing DFTools.def) triggers a build+test run.
-# Publishing happens on a version tag (v*) or a manual dispatch with `publish=true`.
+# Bumping a pin in pins.env rebuilds only the image(s) that contain that tool.
 
 on:
   push:
     branches: [ main ]
-    paths: [ 'pins.env', 'DFTools.def', 'build/**', 'scripts/**', '.github/workflows/release.yml' ]
+    paths: [ 'pins.env', 'images/**', 'build/**', 'scripts/**', '.github/workflows/release.yml' ]
     tags: [ 'v*' ]
   workflow_dispatch:
     inputs:
+      images:
+        description: 'Space-separated images to build (empty = all)'
+        required: false
       publish:
         description: 'Publish a release from this run'
         type: boolean
@@ -24,13 +28,39 @@ on:
         required: false
 
 permissions:
-  contents: write   # needed to create the GitHub Release
+  contents: write
 
 jobs:
+  detect:
+    runs-on: ubuntu-24.04
+    outputs:
+      images: ${{ steps.set.outputs.images }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: set
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.images }}" ]; then
+            list="${{ github.event.inputs.images }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.ref_type }}" = "tag" ]; then
+            list="$(sh scripts/affected-images.sh)"          # all
+          else
+            list="$(sh scripts/affected-images.sh '${{ github.event.before }}' '${{ github.sha }}')"
+          fi
+          json=$(printf '%s\n' $list | jq -R . | jq -cs .)
+          echo "images=$json" >> "$GITHUB_OUTPUT"
+          echo "affected images: $list"
+
   build-test:
+    needs: detect
+    if: needs.detect.outputs.images != '[]'
     strategy:
       fail-fast: true
       matrix:
+        image: ${{ fromJson(needs.detect.outputs.images) }}
+        arch: [ linux-x64, linux-arm64 ]
         include:
           - arch: linux-x64
             runs-on: ubuntu-24.04
@@ -39,83 +69,86 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Free up disk space
         uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          large-packages: true
-          docker-images: true
-
+        with: { tool-cache: true, large-packages: true, docker-images: true }
       - name: Setup Apptainer
         uses: eWaterCycle/setup-apptainer@v2
-
       - name: Setup JDK + Scala CLI
         uses: VirtusLab/scala-cli-setup@v1
-        with:
-          jvm: temurin:21
-
-      - name: Build DFTools image
+        with: { jvm: 'temurin:21' }
+      - name: Build image
         run: |
           set -euo pipefail
-          scala-cli run scripts/build.sc -- dftools-${{ matrix.arch }}.sif
-          sha256sum dftools-${{ matrix.arch }}.sif > dftools-${{ matrix.arch }}.sif.sha256
+          scala-cli run scripts/build.sc -- ${{ matrix.image }} dftools-${{ matrix.image }}-${{ matrix.arch }}.sif
+          sha256sum dftools-${{ matrix.image }}-${{ matrix.arch }}.sif > dftools-${{ matrix.image }}-${{ matrix.arch }}.sif.sha256
+      - name: Probe image
+        run: scala-cli run scripts/test.sc -- probe ${{ matrix.image }} dftools-${{ matrix.image }}-${{ matrix.arch }}.sif
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dftools-${{ matrix.image }}-${{ matrix.arch }}
+          path: |
+            dftools-${{ matrix.image }}-${{ matrix.arch }}.sif
+            dftools-${{ matrix.image }}-${{ matrix.arch }}.sif.sha256
+            dftools-${{ matrix.image }}-${{ matrix.arch }}.MANIFEST.txt
+          retention-days: 7
 
-      # --- Test gate: run DFHDL against the freshly built image ---------------
-      # Requires the DFHDL-side DFTools integration (tools-location option +
-      # `dfhdl.dftools.sif` override). Tests BOTH the latest DFHDL release and main.
+  dfhdl-gate:
+    needs: build-test
+    strategy:
+      matrix:
+        arch: [ linux-x64, linux-arm64 ]
+        include:
+          - arch: linux-x64
+            runs-on: ubuntu-24.04
+          - arch: linux-arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+      - name: Setup JDK + Scala CLI
+        uses: VirtusLab/scala-cli-setup@v1
+        with: { jvm: 'temurin:21' }
+      - name: Download freshly built images (this arch)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dftools-*-${{ matrix.arch }}
+          path: dist
+          merge-multiple: true
       - name: Check out DFHDL (latest release + main)
         run: |
           set -euo pipefail
           git clone https://github.com/DFiantHDL/dfhdl.git dfhdl-main
           git clone https://github.com/DFiantHDL/dfhdl.git dfhdl-release
           ( cd dfhdl-release && git checkout "$(git describe --tags --abbrev=0)" )
-
-      - name: Test against DFHDL latest release
-        run: scala-cli run scripts/test.sc -- dftools-${{ matrix.arch }}.sif dfhdl-release
-
-      - name: Test against DFHDL main
-        run: scala-cli run scripts/test.sc -- dftools-${{ matrix.arch }}.sif dfhdl-main
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dftools-${{ matrix.arch }}
-          path: |
-            dftools-${{ matrix.arch }}.sif
-            dftools-${{ matrix.arch }}.sif.sha256
-            dftools-${{ matrix.arch }}.MANIFEST.txt
-          retention-days: 7
+      # Sifs are named dftools-<image>-<arch>.sif; test.sc maps each to the per-image override.
+      # Images not rebuilt in this run fall back to DFHDL's published-release resolution.
+      - name: Gate against DFHDL latest release
+        run: scala-cli run scripts/test.sc -- dfhdl dist dfhdl-release
+      - name: Gate against DFHDL main
+        run: scala-cli run scripts/test.sc -- dfhdl dist dfhdl-main
 
   publish:
-    needs: build-test
+    needs: dfhdl-gate
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-24.04
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Resolve version
-        id: ver
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - id: ver
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create / update GitHub Release
+          if [ "${{ github.ref_type }}" = "tag" ]; then echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT";
+          else echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"; fi
+      # Attach the freshly built per-image sifs to the release tag. Only rebuilt images are
+      # refreshed; previously published image assets on the same tag are left intact.
+      - name: Publish image assets to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: DFTools ${{ steps.ver.outputs.tag }}
-          body_path: dist/dftools-linux-x64.MANIFEST.txt
           files: |
-            dist/dftools-linux-x64.sif
-            dist/dftools-linux-x64.sif.sha256
-            dist/dftools-linux-arm64.sif
-            dist/dftools-linux-arm64.sif.sha256
+            dist/*.sif
+            dist/*.sif.sha256
             dist/*.MANIFEST.txt

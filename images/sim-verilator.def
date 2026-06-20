@@ -1,0 +1,76 @@
+# DFTools image: sim-verilator
+# Verilator Verilog/SystemVerilog simulation. UNLIKE the other images this one keeps a
+# C++ build environment at RUNTIME: Verilator emits C++ that is compiled into the sim
+# executable at use-time inside the image. Per Verilator's docs, autoconf/flex/bison are
+# build-only (stripped), while g++/make/perl/python3 and the libfl/zlib/lz4 dev headers
+# are required to RUN it. libsdl2-dev is included for SDL-based testbenches.
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: build
+
+%files
+    pins.env /opt/pins.env
+    build/common.sh /opt/common.sh
+    build/strip-runtime.sh /opt/strip-runtime.sh
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    export PREFIX=/opt/dftools
+    . /opt/pins.env
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates git pkg-config \
+        autoconf flex bison help2man \
+        g++ make perl python3 \
+        libfl-dev zlib1g-dev liblz4-dev
+    rm -rf /var/lib/apt/lists/*
+    . /opt/common.sh
+
+    clone https://github.com/verilator/verilator "$VERILATOR_REV" verilator
+    ( cd /src/verilator && autoconf && ./configure --prefix=$PREFIX \
+        && make -j"$NPROC" && make install )
+
+    write_manifest sim-verilator
+    sh /opt/strip-runtime.sh $PREFIX
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: final
+
+%files from build
+    /opt/dftools /opt/dftools
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    # RUNTIME deps incl. the C++ build env Verilator needs to compile the verilated model
+    # (g++, make, perl, python3) and the headers/libs that model links (libfl, zlib, lz4),
+    # plus SDL2 dev for SDL testbenches. autoconf/flex/bison are intentionally NOT here.
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        g++ make perl python3 ccache \
+        libfl-dev zlib1g-dev liblz4-dev libsdl2-dev \
+        libstdc++6 libgcc-s1
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/dftools/bin:$PATH
+    export LD_LIBRARY_PATH=/opt/dftools/lib:/opt/dftools/lib64:$LD_LIBRARY_PATH
+
+%labels
+    org.opencontainers.image.title DFTools/sim-verilator
+    org.opencontainers.image.source https://github.com/DFiantHDL/DFTools
+    org.opencontainers.image.licenses Apache-2.0
+
+%runscript
+    exec "$@"
+
+%test
+    set -e
+    export PATH=/opt/dftools/bin:$PATH
+    verilator --version
+    # confirm the runtime C++ toolchain Verilator needs is present
+    command -v g++ make perl

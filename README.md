@@ -1,87 +1,94 @@
 # DFTools
 
-**Reproducible, source-pinned binary release of the open-source EDA toolchain
-[DFHDL](https://github.com/DFiantHDL/dfhdl) depends on**, packaged as a single
-[Apptainer](https://apptainer.org/) image and run via
+**Reproducible, source-pinned binary releases of the open-source EDA toolchain
+[DFHDL](https://github.com/DFiantHDL/dfhdl) depends on**, packaged as a set of
+[Apptainer](https://apptainer.org/) images and run via
 [Scalapptainer](https://github.com/DFiantWorks/Scalapptainer).
 
-DFHDL runs these tools through DFTools **by default**; users can opt into local
+DFHDL runs these tools through DFTools by default; users can opt into local
 installations with `--tools-location local`. The DFTools release cycle is
-independent of the DFHDL library release: when a tool pin is bumped, CI rebuilds the
-image and tests it against the latest DFHDL release **and** `main` — and only then
-publishes new binaries.
+independent of the DFHDL library release: bumping a tool pin rebuilds and retests
+**only the image(s) that contain it**, and publishes only if the tests pass.
 
-## What's in the image
+## Images
 
-| Category | Tools |
+Tools are clustered by shared heavy dependency / hard linkage, so a tool bump
+rebuilds the smallest possible image:
+
+| image | tools | notes |
+|---|---|---|
+| **synth-verilog** | yosys (+ yosys-slang SV frontend), eqy | no VHDL/LLVM — stays lean |
+| **synth-vhdl** | yosys + ghdl (frontend) + ghdl-yosys-plugin | `yosys -m ghdl`; carries LLVM |
+| **pnr** | nextpnr-ecp5, nextpnr-himbaechel, ecppack, gowin_pack | consumes yosys JSON |
+| **sim-llvm** | nvc + ghdl (simulator) | the two VHDL sims share one LLVM |
+| **sim-verilator** | verilator (+ g++/make/perl, SDL2) | keeps a C++ build env at runtime¹ |
+| **sim-iverilog** | iverilog, vvp | small, self-contained |
+| **wavegen** | surfer | GUI; X11-forwarded |
+| **program** | openFPGALoader | small |
+
+¹ Verilator emits C++ that is compiled into the simulation **at use-time inside the
+image**, so per Verilator's docs `g++`/`make`/`perl` and the `libfl`/`zlib`/`lz4`
+dev headers are runtime requirements (only verilator's own `autoconf`/`flex`/`bison`
+are stripped). `libsdl2-dev` is included for SDL testbenches.
+
+**ghdl appears in two images on purpose**: the *synthesis frontend* ghdl
+(`synth-vhdl`, plugin-ABI-bound to yosys) and the *simulator* ghdl (`sim-llvm`) are
+pinned independently (`GHDL_SYNTH_REV` / `GHDL_SIM_REV`), so a simulator bump never
+perturbs the synthesis image and vice versa. Proprietary tools (Vivado, Quartus,
+Diamond, Gowin Designer, QuestaSim) are out of scope — used only via
+`--tools-location local`.
+
+## Layout
+
+| path | purpose |
 |---|---|
-| Verilog/SV simulation | `verilator`, `iverilog` (`vvp`) |
-| VHDL simulation | `ghdl`, `nvc` |
-| Synthesis | `yosys` + `ghdl-yosys-plugin` (`yosys -m ghdl`) |
-| Place & route | `nextpnr-ecp5` (Lattice), `nextpnr-himbaechel` (Gowin) |
-| Bitstream | `ecppack` (Project Trellis), `gowin_pack` (Apicula) |
-| Programmer | `openFPGALoader` |
-| Formal equivalence | `eqy` |
-| Waveform viewer | `surfer` (GUI; X11-forwarded) |
+| [`pins.env`](pins.env) | single source of truth for source revisions (tag/commit per tool) |
+| [`images/*.def`](images/) | one multi-stage Apptainer recipe per image |
+| [`build/common.sh`](build/common.sh) | shared build helpers (clone, venv, manifest) |
+| [`build/strip-runtime.sh`](build/strip-runtime.sh) | prune build-only artifacts; strip binaries |
+| [`scripts/build.sc`](scripts/build.sc) | `build.sc <image> [dest.sif]` — Scalapptainer build driver |
+| [`scripts/test.sc`](scripts/test.sc) | `test.sc probe <image> <sif>` / `test.sc dfhdl <sif-dir> <dfhdl-dir>` |
+| [`scripts/affected-images.sh`](scripts/affected-images.sh) | maps a diff to the affected image(s) |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | detect → build+test → DFHDL gate → publish |
 
-Proprietary tools (Vivado, Quartus, Diamond, Gowin Designer, QuestaSim) are **not**
-included — DFHDL uses those only via `--tools-location local`.
+## How each image stays minimal
 
-## Repository layout
+Every `.def` is a two-stage build: a heavy `build` stage installs full toolchains and
+installs the tools into `/opt/dftools`; the prefix is pruned and stripped
+(`build/strip-runtime.sh`), then a minimal final stage copies **only** `/opt/dftools`
+and installs just the runtime shared libraries (no compilers, sources, or headers —
+except `sim-verilator`, which intentionally keeps a C++ build env). The base
+(`ubuntu:24.04`, ~28 MB) is the only OS overhead per image; SIF has no cross-image
+layer sharing, so each image carries its own slim base — kept small relative to the
+tool payloads (LLVM, yosys, trellis DB, …).
 
-| Path | Purpose |
-|---|---|
-| [`pins.env`](pins.env) | **Single source of truth** for source revisions (tag/commit per tool) |
-| [`DFTools.def`](DFTools.def) | Multi-stage Apptainer recipe: heavy `build` stage → minimal runtime stage |
-| [`build/strip-runtime.sh`](build/strip-runtime.sh) | Prunes build-only artifacts and strips binaries |
-| [`scripts/build.sc`](scripts/build.sc) | Scalapptainer build driver (`.def` + pins → `.sif`) |
-| [`scripts/test.sc`](scripts/test.sc) | Validates a built `.sif` (image self-test + DFHDL gate) |
-| [`.github/workflows/release.yml`](.github/workflows/release.yml) | build → test → publish pipeline |
-
-## How the minimal image works
-
-`DFTools.def` is a two-stage build:
-
-1. **`build` stage** — full toolchains (gcc/clang, gnat, LLVM, Rust, cmake, boost,
-   …). Each tool is cloned at its `pins.env` revision and installed into
-   `/opt/dftools`. The prefix is then pruned and stripped (`build/strip-runtime.sh`).
-2. **final stage** — copies **only** `/opt/dftools` from the build stage and installs
-   just the runtime shared libraries. No compilers, source trees, headers, static
-   libraries, or build artifacts reach the published `.sif`.
-
-The LLVM backend is used for `ghdl` and `nvc` so the same recipe builds on both
-`linux-x64` and `linux-arm64`.
+The LLVM backend is used for `ghdl`/`nvc` so the recipes build on both `linux-x64`
+and `linux-arm64`.
 
 ## Reproducibility & pinning
 
-Every tool is built from a specific tag or commit recorded in `pins.env` — never a
-moving branch. To update a tool, change its line in `pins.env`; the diff drives the
-build → test → publish pipeline. After the first green CI build, commit-pinned
-revisions that point at a branch head should be hardened to the exact built SHA.
+Every tool is built from a specific tag or commit in `pins.env` — never a moving
+branch. Change one line to bump a tool; CI rebuilds only the affected image(s). After
+the first green build, harden branch-head commit pins to exact SHAs.
 
-## Building locally
+## Building & testing locally
 
 Requires Apptainer (native Linux) or, on Windows/macOS, the WSL2/Lima backend that
-Scalapptainer provisions. Build from the repository root:
+Scalapptainer provisions. From the repository root:
 
 ```bash
-scala-cli run scripts/build.sc -- dftools.sif        # real root (CI / Docker)
-DFTOOLS_NONROOT=1 scala-cli run scripts/build.sc -- dftools.sif   # unprivileged dev build
-```
-
-Validate a built image:
-
-```bash
-scala-cli run scripts/test.sc -- dftools.sif [path/to/dfhdl/checkout]
+scala-cli run scripts/build.sc -- synth-verilog                 # real root (CI/Docker)
+DFTOOLS_NONROOT=1 scala-cli run scripts/build.sc -- synth-verilog   # unprivileged dev build
+scala-cli run scripts/test.sc  -- probe synth-verilog dftools-synth-verilog.sif
 ```
 
 ## Releases
 
-Each release `vX.Y.Z` attaches, per architecture:
-`dftools-X.Y.Z-<arch>.sif`, its `.sha256`, and a `MANIFEST.txt` (tool → pinned
-revision). DFHDL pulls the `.sif` matching its baked-in DFTools version.
+Each release tag holds the per-image assets `dftools-<image>-<arch>.sif` (+ `.sha256`
+and `MANIFEST.txt`). DFHDL pulls the per-image asset it needs for the current arch.
+Only rebuilt images are refreshed on a re-publish.
 
 ## License
 
-DFTools packaging (recipe, scripts, CI) is **Apache-2.0**. The bundled tools retain
-their own upstream licenses.
+DFTools packaging (recipes, scripts, CI) is **Apache-2.0**. Bundled tools retain their
+own upstream licenses.

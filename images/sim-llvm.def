@@ -20,7 +20,7 @@ Stage: build
     apt-get update
     apt-get install -y --no-install-recommends \
         ca-certificates git pkg-config \
-        build-essential gnat llvm-dev libclang-dev \
+        build-essential clang gnat llvm-dev libclang-dev \
         automake autoconf libtool flex bison check \
         libdw-dev zlib1g-dev libzstd-dev libffi-dev libreadline-dev
     rm -rf /var/lib/apt/lists/*
@@ -51,11 +51,13 @@ Stage: final
 %post
     set -eux
     export DEBIAN_FRONTEND=noninteractive
+    # ghdl's LLVM backend links each elaborated design at use-time, so a C toolchain
+    # (cc + crt objects + linker) is a RUNTIME requirement here, like sim-verilator.
     apt-get update
     apt-get install -y --no-install-recommends \
-        ca-certificates \
+        ca-certificates gcc libc6-dev libgnat-13 \
         libstdc++6 libgcc-s1 libllvm18 \
-        zlib1g libzstd1 libffi8 libdw1 libreadline8t64
+        zlib1g-dev libzstd1 libffi8 libdw1 libreadline8t64
     rm -rf /var/lib/apt/lists/*
 
 %environment
@@ -75,3 +77,9 @@ Stage: final
     export PATH=/opt/dftools/bin:$PATH
     ghdl version | head -1
     nvc --version
+    # actually analyze+elaborate a trivial design: exercises ghdl1-llvm (libgnat) and
+    # the runtime cc/linker, which a bare `--version` probe would not catch.
+    d="$(mktemp -d)"; printf 'entity t is end;\narchitecture a of t is begin end;\n' > "$d/t.vhd"
+    ( cd "$d" && ghdl -a --std=08 t.vhd && ghdl -e --std=08 t )
+    ( cd "$d" && nvc -a t.vhd && nvc -e t )
+    rm -rf "$d"

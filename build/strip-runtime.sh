@@ -6,11 +6,12 @@
 set -eu
 PREFIX="${1:-/opt/dftools}"
 
-# Dev headers and static/libtool archives — link-time only. NOTE: only the top-level
-# include/ dir is removed; do NOT blanket-delete *.h, since some tools ship runtime
-# headers under share/ (e.g. Verilator's share/verilator/include, compiled at use-time).
+# Dev headers and libtool archives — link-time only. NOTE: only the top-level include/
+# dir is removed; do NOT blanket-delete *.h or *.a, since some tools ship runtime headers
+# under share/ (Verilator's share/verilator/include) or runtime static archives (ghdl's
+# libgrt.a, linked into every elaborated design at use-time).
 rm -rf "$PREFIX/include"
-find "$PREFIX" -type f \( -name '*.a' -o -name '*.la' \) -delete 2>/dev/null || true
+find "$PREFIX" -type f -name '*.la' -delete 2>/dev/null || true
 
 # Docs / man / info / locale — not needed at runtime.
 rm -rf "$PREFIX/share/man" "$PREFIX/share/doc" "$PREFIX/share/info" \

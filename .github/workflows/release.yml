@@ -124,9 +124,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y apptainer
           apptainer --version
-      - name: Setup JDK + Scala CLI
-        uses: VirtusLab/scala-cli-setup@v1
-        with: { jvm: 'temurin:21' }
+      # DFHDL builds on JDK 17 with sbt + bloop (see dfhdl/.github/workflows/build.yml).
+      # scala-cli is added only to run this repo's gate driver (scripts/test.sc), which
+      # then invokes `sbt testApps` inside the DFHDL checkout on the same JAVA_HOME.
+      - name: Setup Scala
+        uses: coursier/setup-action@v1
+        with:
+          jvm: temurin:1.17.0.14
+          apps: sbt bloop scala-cli
       - name: Download freshly built images (this arch)
         uses: actions/download-artifact@v4
         with:

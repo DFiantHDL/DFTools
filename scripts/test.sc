@@ -57,10 +57,12 @@ args(0) match
         .map(p => s"-Ddfhdl.dftools.sif.$image=${p.toString}")
     }
     require(overrides.nonEmpty, s"no dftools-*.sif found under $sifDir")
-    val sbtn = if scala.util.Properties.isWin then "sbtn.bat" else "sbtn"
+    // local dev on Windows uses the fast sbt client; CI (Linux) uses plain `sbt`, the
+    // same launcher DFHDL's own CI runs (`sbt testApps`).
+    val sbtCmd = if scala.util.Properties.isWin then "sbtn.bat" else "sbt"
     val jvmOpts = overrides.mkString(" ")
     println(s"[dftools-test] DFHDL gate in $dfhdlDir with:\n  ${overrides.mkString("\n  ")}")
-    val res = os.proc(sbtn, s"""set ThisBuild/javaOptions ++= "$jvmOpts".split(" ").toSeq""", "testApps")
+    val res = os.proc(sbtCmd, s"""set ThisBuild/javaOptions ++= "$jvmOpts".split(" ").toSeq""", "testApps")
       .call(cwd = dfhdlDir, check = false, stdout = os.Inherit, stderr = os.Inherit)
     require(res.exitCode == 0, s"DFHDL testApps failed (exit ${res.exitCode})")
     println("[dftools-test] DFHDL gate passed.")

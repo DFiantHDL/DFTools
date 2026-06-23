@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Keep the GitHub Actions used in release.yml on their latest versions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

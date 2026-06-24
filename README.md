@@ -21,7 +21,7 @@ rebuilds the smallest possible image:
 | **synth-vhdl** | yosys + ghdl (frontend) + ghdl-yosys-plugin | `yosys -m ghdl`; carries LLVM |
 | **pnr** | nextpnr-ecp5, nextpnr-himbaechel, ecppack, gowin_pack | consumes yosys JSON |
 | **sim-llvm** | nvc + ghdl (simulator) | the two VHDL sims share one LLVM |
-| **sim-verilator** | verilator (+ g++/make/perl, SDL2) | keeps a C++ build env at runtime¹ |
+| **sim-verilator** | verilator (+ g++/make/perl) | keeps a C++ build env at runtime¹ |
 | **sim-iverilog** | iverilog, vvp | small, self-contained |
 | **wavegen** | surfer | GUI; X11-forwarded |
 | **program** | openFPGALoader | small |
@@ -29,7 +29,7 @@ rebuilds the smallest possible image:
 ¹ Verilator emits C++ that is compiled into the simulation **at use-time inside the
 image**, so per Verilator's docs `g++`/`make`/`perl` and the `libfl`/`zlib`/`lz4`
 dev headers are runtime requirements (only verilator's own `autoconf`/`flex`/`bison`
-are stripped). `libsdl2-dev` is included for SDL testbenches.
+are stripped).
 
 **ghdl appears in two images on purpose**: the *synthesis frontend* ghdl
 (`synth-vhdl`, plugin-ABI-bound to yosys) and the *simulator* ghdl (`sim-llvm`) are

@@ -3,7 +3,7 @@
 # C++ build environment at RUNTIME: Verilator emits C++ that is compiled into the sim
 # executable at use-time inside the image. Per Verilator's docs, autoconf/flex/bison are
 # build-only (stripped), while g++/make/perl/python3 and the libfl/zlib/lz4 dev headers
-# are required to RUN it. libsdl2-dev is included for SDL-based testbenches.
+# are required to RUN it.
 
 Bootstrap: docker
 From: ubuntu:24.04
@@ -46,13 +46,13 @@ Stage: final
     set -eux
     export DEBIAN_FRONTEND=noninteractive
     # RUNTIME deps incl. the C++ build env Verilator needs to compile the verilated model
-    # (g++, make, perl, python3) and the headers/libs that model links (libfl, zlib, lz4),
-    # plus SDL2 dev for SDL testbenches. autoconf/flex/bison are intentionally NOT here.
+    # (g++, make, perl, python3) and the headers/libs that model links (libfl, zlib, lz4).
+    # autoconf/flex/bison are intentionally NOT here.
     apt-get update
     apt-get install -y --no-install-recommends \
         ca-certificates \
         g++ make perl python3 ccache \
-        libfl-dev zlib1g-dev liblz4-dev libsdl2-dev \
+        libfl-dev zlib1g-dev liblz4-dev \
         libstdc++6 libgcc-s1
     rm -rf /var/lib/apt/lists/*
 

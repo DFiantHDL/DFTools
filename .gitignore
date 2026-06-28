@@ -1,3 +1,7 @@
 # Editor / IDE
 .metals/
 .vscode/
+
+# scala-cli / Bloop build outputs
+.scala-build/
+.bsp/

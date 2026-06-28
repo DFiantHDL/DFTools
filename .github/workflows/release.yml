@@ -156,14 +156,24 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with: { path: dist, merge-multiple: true }
       - id: ver
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT";
           else echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"; fi
-      # Attach the freshly built per-image sifs to the release tag. Only rebuilt images are
-      # refreshed; previously published image assets on the same tag are left intact.
+      - name: Setup JDK + Scala CLI
+        uses: VirtusLab/scala-cli-setup@v1
+        with: { jvm: 'temurin:21' }
+      # Rename the built sifs to immutable, content-addressed asset names and (re)generate the
+      # lockfile mapping each image+arch to its sha256 + asset. Seeded from the prior lockfile on
+      # the tag, so a partial re-publish carries unchanged images forward.
+      - name: Build lockfile + immutable asset names
+        run: scala-cli run scripts/lockfile.sc -- ${{ steps.ver.outputs.tag }} dist
+      # Attach the immutable per-image sifs + the lockfile to the release tag. Immutable names never
+      # collide across builds, so previously published assets on the same tag are left intact; the
+      # lockfile (stable name) is overwritten to point at the current digest set.
       - name: Publish image assets to release
         uses: softprops/action-gh-release@v3
         with:
@@ -173,3 +183,4 @@ jobs:
             dist/*.sif
             dist/*.sif.sha256
             dist/*.MANIFEST.txt
+            dist/dftools.lock.json

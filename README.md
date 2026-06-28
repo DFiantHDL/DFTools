@@ -49,6 +49,7 @@ Diamond, Gowin Designer, QuestaSim) are out of scope — used only via
 | [`scripts/build.sc`](scripts/build.sc) | `build.sc <image> [dest.sif]` — Scalapptainer build driver |
 | [`scripts/test.sc`](scripts/test.sc) | `test.sc probe <image> <sif>` / `test.sc dfhdl <sif-dir> <dfhdl-dir>` |
 | [`scripts/affected-images.sh`](scripts/affected-images.sh) | maps a diff to the affected image(s) |
+| [`scripts/lockfile.sc`](scripts/lockfile.sc) | rename sifs to immutable names + (re)generate `dftools.lock.json` |
 | [`.github/workflows/release.yml`](.github/workflows/release.yml) | detect → build+test → DFHDL gate → publish |
 
 ## How each image stays minimal
@@ -84,9 +85,25 @@ scala-cli run scripts/test.sc  -- probe synth-verilog dftools-synth-verilog.sif
 
 ## Releases
 
-Each release tag holds the per-image assets `dftools-<image>-<arch>.sif` (+ `.sha256`
-and `MANIFEST.txt`). DFHDL pulls the per-image asset it needs for the current arch.
-Only rebuilt images are refreshed on a re-publish.
+Each release tag holds a [`dftools.lock.json`](scripts/lockfile.sc) plus the per-image
+assets. Asset names are **immutable and content-addressed** —
+`dftools-<image>-<arch>-<sha12>.sif` (+ `.sha256` and `.MANIFEST.txt`) — so a published
+asset is never mutated in place: a changed image lands under a new name and old tags stay
+valid.
+
+The lockfile is the tag's **only** version-keyed artifact. It maps each image+arch to the
+sha256 of its sif and the asset carrying those bytes:
+
+```json
+{ "tag": "v0.2.0",
+  "images": { "sim-verilator": { "linux-x64": { "sha256": "ab12…",
+                                                 "asset": "dftools-sim-verilator-linux-x64-ab12….sif" } } } }
+```
+
+DFHDL bundles this lockfile at build time and resolves/caches each image **by sha256**, not
+by tag — so bumping the tag re-downloads only the image(s) whose digest actually changed, and
+the rest of the set is a cache hit. Only rebuilt images are refreshed on a re-publish; the
+lockfile is regenerated (seeded from the prior one on the tag) to point at the current set.
 
 ## License
 

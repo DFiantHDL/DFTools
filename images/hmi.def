@@ -1,0 +1,43 @@
+# DFTools image: hmi
+# Human/host-facing media helpers. Currently just ffmpeg, installed from the Ubuntu
+# archive (a prebuilt distro package, not a source-pinned build), so this image is a
+# single stage with no build toolchain to strip — the exception to the two-stage
+# build-from-source pattern the other images follow.
+
+Bootstrap: docker
+From: ubuntu:24.04
+
+%files
+    pins.env /opt/pins.env
+    build/common.sh /opt/common.sh
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    export PREFIX=/opt/dftools
+    . /opt/pins.env
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        ffmpeg
+    rm -rf /var/lib/apt/lists/*
+    . /opt/common.sh
+
+    # ffmpeg lands on the system PATH (/usr/bin); $PREFIX carries only the manifest that
+    # build.sc reads back (no source pins consumed, so it records just the image + arch).
+    write_manifest hmi
+
+%environment
+    export PATH=/opt/dftools/bin:$PATH
+
+%labels
+    org.opencontainers.image.title DFTools/hmi
+    org.opencontainers.image.source https://github.com/DFiantHDL/DFTools
+    org.opencontainers.image.licenses Apache-2.0
+
+%runscript
+    exec "$@"
+
+%test
+    set -e
+    ffmpeg -version

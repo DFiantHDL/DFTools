@@ -24,7 +24,7 @@ def baseName(p: String): String =
 
 val images = Set(
   "synth-verilog", "synth-vhdl", "pnr", "sim-llvm",
-  "sim-verilator", "sim-iverilog", "wavegen", "program"
+  "sim-verilator", "sim-iverilog", "wavegen", "program", "hmi"
 )
 
 require(args.nonEmpty, s"usage: build.sc <image> [dest.sif]; images: ${images.mkString(" ")}")

@@ -25,11 +25,16 @@ rebuilds the smallest possible image:
 | **sim-iverilog** | iverilog, vvp | small, self-contained |
 | **wavegen** | surfer | GUI; X11-forwarded |
 | **program** | openFPGALoader | small |
+| **hmi** | ffmpeg | distro package; single-stage² |
 
 ¹ Verilator emits C++ that is compiled into the simulation **at use-time inside the
 image**, so per Verilator's docs `g++`/`make`/`perl` and the `libfl`/`zlib`/`lz4`
 dev headers are runtime requirements (only verilator's own `autoconf`/`flex`/`bison`
 are stripped).
+
+² `hmi` installs the prebuilt `ffmpeg` distro package (not a source-pinned build), so it
+has no build toolchain to strip and is a single stage — the exception to the two-stage
+build-from-source pattern below. Its version floats with `ubuntu:24.04` (no `pins.env` entry).
 
 **ghdl appears in two images on purpose**: the *synthesis frontend* ghdl
 (`synth-vhdl`, plugin-ABI-bound to yosys) and the *simulator* ghdl (`sim-llvm`) are
@@ -54,7 +59,8 @@ Diamond, Gowin Designer, QuestaSim) are out of scope — used only via
 
 ## How each image stays minimal
 
-Every `.def` is a two-stage build: a heavy `build` stage installs full toolchains and
+Every `.def` (except `hmi`, a single-stage distro install — see ² above) is a two-stage
+build: a heavy `build` stage installs full toolchains and
 installs the tools into `/opt/dftools`; the prefix is pruned and stripped
 (`build/strip-runtime.sh`), then a minimal final stage copies **only** `/opt/dftools`
 and installs just the runtime shared libraries (no compilers, sources, or headers —

@@ -26,7 +26,7 @@ val probes: Map[String, Seq[Seq[String]]] = Map(
   "sim-iverilog"  -> Seq(Seq("iverilog", "-V")),
   "wavegen"       -> Seq(Seq("surfer", "--version")),
   "program"       -> Seq(Seq("openFPGALoader", "-V")),
-  "hmi"           -> Seq(Seq("ffmpeg", "-version"))
+  "hmi"           -> Seq(Seq("ffmpeg", "-version"), Seq("fpga-isv", "--help"))
 )
 
 require(args.length >= 2, "usage: test.sc probe <image> <sif> | test.sc dfhdl <sif-dir> <dfhdl-dir>")

@@ -1,8 +1,12 @@
 # DFTools image: hmi
-# Human/host-facing media helpers. Currently just ffmpeg, installed from the Ubuntu
-# archive (a prebuilt distro package, not a source-pinned build), so this image is a
-# single stage with no build toolchain to strip — the exception to the two-stage
-# build-from-source pattern the other images follow.
+# Host/media helpers for interactive simulation:
+#   - ffmpeg   : prebuilt Ubuntu archive package (unpinned) for media/stream encoding
+#   - fpga-isv : interactive-sim-viewer, a cross-platform Python/Tk GUI panel viewer
+#                (source-pinned via FPGA_ISV_REV), a pure client of the interactive-sim socket API
+#
+# Pure-Python + wheels (no compiler to strip), so this stays a single stage — the exception to the
+# two-stage build-from-source pattern. fpga-isv is a GUI -> X11-forwarded by the host via
+# Scalapptainer's withX11().
 
 Bootstrap: docker
 From: ubuntu:24.04
@@ -18,17 +22,25 @@ From: ubuntu:24.04
     . /opt/pins.env
     apt-get update
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        ffmpeg
+        ca-certificates git \
+        ffmpeg \
+        python3 python3-venv python3-pip python3-tk
     rm -rf /var/lib/apt/lists/*
     . /opt/common.sh
+    py_venv
 
-    # ffmpeg lands on the system PATH (/usr/bin); $PREFIX carries only the manifest that
-    # build.sc reads back (no source pins consumed, so it records just the image + arch).
+    # fpga-isv (interactive-sim-viewer): installed from its pinned tag into the shared venv, exposing
+    # `fpga-isv` on pyenv/bin. Pillow arrives as a manylinux wheel (bundles its own libjpeg/zlib), so
+    # no build toolchain is needed; tkinter is provided by the system python3-tk (the venv shares the
+    # base interpreter's stdlib, where _tkinter lives).
+    clone https://github.com/DFiantWorks/interactive-sim-viewer "$FPGA_ISV_REV" interactive-sim-viewer
+    pip install --no-cache-dir /src/interactive-sim-viewer
+    rm -rf /src/interactive-sim-viewer
+
     write_manifest hmi
 
 %environment
-    export PATH=/opt/dftools/bin:$PATH
+    export PATH=/opt/dftools/bin:/opt/dftools/pyenv/bin:$PATH
 
 %labels
     org.opencontainers.image.title DFTools/hmi
@@ -40,4 +52,6 @@ From: ubuntu:24.04
 
 %test
     set -e
+    export PATH=/opt/dftools/bin:/opt/dftools/pyenv/bin:$PATH
     ffmpeg -version
+    fpga-isv --help >/dev/null

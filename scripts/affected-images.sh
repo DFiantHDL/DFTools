@@ -23,6 +23,7 @@ pin_images() {  # map a pins.env key to the image(s) that consume it
     IVERILOG_REV)                       echo "sim-iverilog" ;;
     SURFER_REV)                         echo "wavegen" ;;
     OPENFPGALOADER_REV)                 echo "program" ;;
+    FPGA_ISV_REV)                       echo "hmi" ;;
     *)                                  echo "" ;;
   esac
 }

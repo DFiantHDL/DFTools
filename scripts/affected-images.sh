@@ -22,7 +22,7 @@ pin_images() {  # map a pins.env key to the image(s) that consume it
     VERILATOR_REV)                      echo "sim-verilator" ;;
     IVERILOG_REV)                       echo "sim-iverilog" ;;
     XEZIM_REV|XEZIM_CORE_REV)           echo "sim-xezim" ;;
-    SURFER_REV)                         echo "wavegen" ;;
+    SURFER_REV|GTKWAVE_REV)             echo "wavegen" ;;
     OPENFPGALOADER_REV)                 echo "program" ;;
     FPGA_ISV_REV)                       echo "hmi" ;;
     *)                                  echo "" ;;

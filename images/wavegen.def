@@ -1,7 +1,9 @@
 # DFTools image: wavegen
-# Surfer waveform viewer (Rust GUI). Built with a throwaway rustup toolchain; only the
-# `surfer` binary is installed. GUI -> needs X11/Wayland/GL runtime libs (X11-forwarded
-# by the host via Scalapptainer's withX11()).
+# Waveform viewers: Surfer (Rust GUI, throwaway rustup toolchain) + GTKWave (GTK3, from
+# the gtkwave3-gtk3 tree of the last tagged release; the meson-based rewrite upstream is
+# still 4.0.0-prealpha). GTKWave also brings its format converters (vcd2fst, fst2vcd,
+# lxt2vcd, ...). GUI -> needs X11/Wayland/GL + GTK3 runtime libs (X11-forwarded by the
+# host via Scalapptainer's withX11()).
 
 Bootstrap: docker
 From: ubuntu:24.04
@@ -20,8 +22,9 @@ Stage: build
     apt-get update
     apt-get install -y --no-install-recommends \
         ca-certificates git curl xz-utils pkg-config \
-        build-essential cmake \
-        libfontconfig-dev libssl-dev
+        build-essential cmake gperf \
+        libfontconfig-dev libssl-dev \
+        libgtk-3-dev libbz2-dev zlib1g-dev
     rm -rf /var/lib/apt/lists/*
     . /opt/common.sh
 
@@ -30,6 +33,13 @@ Stage: build
     clone https://gitlab.com/surfer-project/surfer "$SURFER_REV" surfer --recursive
     ( cd /src/surfer && cargo build --release --locked -p surfer \
         && install -Dm755 target/release/surfer $PREFIX/bin/surfer )
+
+    # GTKWave: the repo tag holds parallel gtk2/gtk3 trees; build the gtk3 one (ships a
+    # pregenerated configure). Tcl integration is disabled to keep tcl/tk out of runtime.
+    clone https://github.com/gtkwave/gtkwave "$GTKWAVE_REV" gtkwave
+    ( cd /src/gtkwave/gtkwave3-gtk3 \
+        && ./configure --prefix=$PREFIX --enable-gtk3 --disable-tcl \
+        && make -j"$NPROC" && make install )
 
     write_manifest wavegen
     sh /opt/strip-runtime.sh $PREFIX
@@ -49,7 +59,8 @@ Stage: final
         ca-certificates \
         libstdc++6 libgcc-s1 libssl3 \
         libgl1 libx11-6 libxext6 libxrender1 libxi6 libxkbcommon0 \
-        libwayland-client0 libfontconfig1 libfreetype6
+        libwayland-client0 libfontconfig1 libfreetype6 \
+        libgtk-3-0t64 libbz2-1.0 zlib1g
     rm -rf /var/lib/apt/lists/*
 
 %environment
@@ -68,3 +79,5 @@ Stage: final
     set -e
     export PATH=/opt/dftools/bin:$PATH
     surfer --version || true
+    gtkwave --version | head -1
+    vcd2fst --help >/dev/null 2>&1 || true

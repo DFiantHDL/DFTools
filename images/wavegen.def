@@ -1,9 +1,10 @@
 # DFTools image: wavegen
 # Waveform viewers: Surfer (Rust GUI, throwaway rustup toolchain) + GTKWave (GTK3, from
 # the gtkwave3-gtk3 tree of the last tagged release; the meson-based rewrite upstream is
-# still 4.0.0-prealpha). GTKWave also brings its format converters (vcd2fst, fst2vcd,
-# lxt2vcd, ...). GUI -> needs X11/Wayland/GL + GTK3 runtime libs (X11-forwarded by the
-# host via Scalapptainer's withX11()).
+# still 4.0.0-prealpha) + WaveCrux (prebuilt upstream AppImage, x86_64 only — closed
+# source during its public beta, pinned by version + sha256). GTKWave also brings its
+# format converters (vcd2fst, fst2vcd, lxt2vcd, ...). GUI -> needs X11/Wayland/GL + GTK3
+# runtime libs (X11-forwarded by the host via Scalapptainer's withX11()).
 
 Bootstrap: docker
 From: ubuntu:24.04
@@ -40,6 +41,21 @@ Stage: build
     ( cd /src/gtkwave/gtkwave3-gtk3 \
         && ./configure --prefix=$PREFIX --enable-gtk3 --disable-tcl \
         && make -j"$NPROC" && make install )
+
+    # WaveCrux: upstream ships a prebuilt x86_64-only AppImage (closed-source beta), so
+    # this is the second prebuilt exception (with hmi's ffmpeg) — pinned by version +
+    # sha256 rather than a source rev. Extracted at build time (no FUSE inside the
+    # image; the AppImage bundles its own libs beyond the base X11/GL set) and exposed
+    # as `wavecrux`. Skipped on non-x86_64 arches until upstream publishes an aarch64 build.
+    if [ "$(uname -m)" = "x86_64" ]; then
+        curl -fL -o /src/wavecrux.AppImage \
+            "https://updates.wavecrux.app/${WAVECRUX_REV}/WaveCrux-${WAVECRUX_REV}-x86_64.AppImage"
+        echo "$WAVECRUX_SHA256  /src/wavecrux.AppImage" | sha256sum -c -
+        chmod +x /src/wavecrux.AppImage
+        ( cd /src && ./wavecrux.AppImage --appimage-extract >/dev/null )
+        mv /src/squashfs-root $PREFIX/wavecrux
+        ln -s ../wavecrux/AppRun $PREFIX/bin/wavecrux
+    fi
 
     write_manifest wavegen
     sh /opt/strip-runtime.sh $PREFIX
@@ -81,3 +97,8 @@ Stage: final
     surfer --version || true
     gtkwave --version | head -1
     vcd2fst --help >/dev/null 2>&1 || true
+    # wavecrux is x86_64-only; GUI startup may still need a display, so tolerate failure
+    if [ "$(uname -m)" = "x86_64" ]; then
+        command -v wavecrux
+        wavecrux --version || true
+    fi

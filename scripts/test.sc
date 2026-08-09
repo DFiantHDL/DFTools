@@ -26,7 +26,9 @@ val probes: Map[String, Seq[Seq[String]]] = Map(
   "sim-iverilog"  -> Seq(Seq("iverilog", "-V")),
   "sim-xezim"     -> Seq(Seq("xezim", "-V")),
   "wavegen"       -> Seq(Seq("surfer", "--version"),
-                         Seq("sh", "-c", "gtkwave --version | head -1")),
+                         Seq("sh", "-c", "gtkwave --version | head -1"),
+                         // wavecrux ships x86_64-only (prebuilt AppImage)
+                         Seq("sh", "-c", "[ \"$(uname -m)\" != x86_64 ] || command -v wavecrux")),
   "program"       -> Seq(Seq("openFPGALoader", "-V")),
   "hmi"           -> Seq(Seq("ffmpeg", "-version"), Seq("fpga-isv", "--help"))
 )

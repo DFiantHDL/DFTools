@@ -24,7 +24,7 @@ rebuilds the smallest possible image:
 | **sim-verilator** | verilator (+ g++/make/perl) | keeps a C++ build env at runtime¹ |
 | **sim-iverilog** | iverilog, vvp | small, self-contained |
 | **sim-xezim** | xezim | Rust SV simulator; built in lockstep with xezim-core; linux-x64 only until [aionhw/xezim#105](https://github.com/aionhw/xezim/issues/105) |
-| **wavegen** | surfer, gtkwave (+ vcd2fst/fst2vcd/… converters) | GUI; X11-forwarded |
+| **wavegen** | surfer, gtkwave (+ vcd2fst/fst2vcd/… converters), wavecrux³ | GUI; X11-forwarded |
 | **program** | openFPGALoader | small |
 | **hmi** | ffmpeg, fpga-isv | media + interactive-sim viewer GUI (X11); single-stage² |
 
@@ -38,6 +38,14 @@ and `fpga-isv` (the interactive-sim-viewer Python/Tk GUI, source-pinned via `FPG
 installed into the shared venv). Both are pure-Python/wheels or prebuilt, so there is no build
 toolchain to strip and it stays a single stage — the exception to the two-stage build-from-source
 pattern below. `fpga-isv` is a GUI, X11-forwarded like `wavegen`.
+
+³ `wavecrux` is the upstream-prebuilt WaveCrux AppImage (closed source during its public
+beta), pinned by version **and sha256** (`WAVECRUX_REV`/`WAVECRUX_SHA256`) and extracted into
+the image at build time (no FUSE needed at runtime). Upstream ships x86_64 only, so it is
+present only in the linux-x64 wavegen image; the aarch64 image carries the source-built
+viewers alone. Revisit both (and the pin style) when the canonical
+[Ferrite-Engineering/wavecrux](https://github.com/Ferrite-Engineering/wavecrux) source repo
+opens post-beta.
 
 **ghdl appears in two images on purpose**: the *synthesis frontend* ghdl
 (`synth-vhdl`, plugin-ABI-bound to yosys) and the *simulator* ghdl (`sim-llvm`) are

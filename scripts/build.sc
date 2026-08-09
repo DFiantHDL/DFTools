@@ -10,7 +10,7 @@
 //   scala-cli run scripts/build.sc -- <image> [dest.sif]
 //
 // where <image> is one of: synth-verilog synth-vhdl pnr sim-llvm sim-verilator
-//                          sim-iverilog wavegen program
+//                          sim-iverilog sim-xezim wavegen program hmi
 //
 // In CI (real Linux runner with root) the build runs with real root. For an unprivileged
 // local/dev build set DFTOOLS_NONROOT=1 (slower emulated-root build).
@@ -24,7 +24,7 @@ def baseName(p: String): String =
 
 val images = Set(
   "synth-verilog", "synth-vhdl", "pnr", "sim-llvm",
-  "sim-verilator", "sim-iverilog", "wavegen", "program", "hmi"
+  "sim-verilator", "sim-iverilog", "sim-xezim", "wavegen", "program", "hmi"
 )
 
 require(args.nonEmpty, s"usage: build.sc <image> [dest.sif]; images: ${images.mkString(" ")}")

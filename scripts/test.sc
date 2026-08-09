@@ -24,6 +24,7 @@ val probes: Map[String, Seq[Seq[String]]] = Map(
   "sim-llvm"      -> Seq(Seq("ghdl", "version"), Seq("nvc", "--version")),
   "sim-verilator" -> Seq(Seq("verilator", "--version"), Seq("sh", "-c", "command -v g++ make perl")),
   "sim-iverilog"  -> Seq(Seq("iverilog", "-V")),
+  "sim-xezim"     -> Seq(Seq("xezim", "-V")),
   "wavegen"       -> Seq(Seq("surfer", "--version")),
   "program"       -> Seq(Seq("openFPGALoader", "-V")),
   "hmi"           -> Seq(Seq("ffmpeg", "-version"), Seq("fpga-isv", "--help"))

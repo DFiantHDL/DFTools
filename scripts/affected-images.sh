@@ -10,7 +10,7 @@
 #   - a changed <KEY>_REV line in pins.env affects the image(s) that build that tool.
 set -eu
 
-ALL="synth-verilog synth-vhdl pnr sim-llvm sim-verilator sim-iverilog wavegen program hmi"
+ALL="synth-verilog synth-vhdl pnr sim-llvm sim-verilator sim-iverilog sim-xezim wavegen program hmi"
 
 pin_images() {  # map a pins.env key to the image(s) that consume it
   case "$1" in
@@ -21,6 +21,7 @@ pin_images() {  # map a pins.env key to the image(s) that consume it
     NVC_REV|GHDL_SIM_REV)               echo "sim-llvm" ;;
     VERILATOR_REV)                      echo "sim-verilator" ;;
     IVERILOG_REV)                       echo "sim-iverilog" ;;
+    XEZIM_REV|XEZIM_CORE_REV)           echo "sim-xezim" ;;
     SURFER_REV)                         echo "wavegen" ;;
     OPENFPGALOADER_REV)                 echo "program" ;;
     FPGA_ISV_REV)                       echo "hmi" ;;

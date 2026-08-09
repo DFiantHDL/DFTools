@@ -1,0 +1,76 @@
+# DFTools image: sim-xezim
+# Xezim SystemVerilog simulator (Rust). Built with a throwaway rustup toolchain; only
+# the `xezim` binary is installed, plus upstream's minimal svdpi.h/vpi_user.h under
+# share/. xezim's Cargo.toml path-depends on a sibling xezim-core checkout, so both
+# repos are cloned side-by-side under /src and pinned in lockstep.
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: build
+
+%files
+    pins.env /opt/pins.env
+    build/common.sh /opt/common.sh
+    build/strip-runtime.sh /opt/strip-runtime.sh
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    export PREFIX=/opt/dftools
+    . /opt/pins.env
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates git curl xz-utils \
+        build-essential
+    rm -rf /var/lib/apt/lists/*
+    . /opt/common.sh
+
+    # MSRV is 1.92 (edition 2024), so rustup stable rather than the archive rustc.
+    # libffi is vendored on Linux; no system dev libraries needed.
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+    . "$HOME/.cargo/env"
+    clone https://github.com/aionhw/xezim-core "$XEZIM_CORE_REV" xezim-core
+    clone https://github.com/aionhw/xezim "$XEZIM_REV" xezim
+    # upstream commits no Cargo.lock, so --locked is not applicable
+    ( cd /src/xezim && cargo build --release \
+        && install -Dm755 target/release/xezim $PREFIX/bin/xezim )
+    # upstream's minimal DPI headers, so DPI code compiles without a vendor install;
+    # under share/ because strip-runtime.sh prunes the top-level include/
+    install -Dm644 /src/xezim/include/svdpi.h    $PREFIX/share/xezim/include/svdpi.h
+    install -Dm644 /src/xezim/include/vpi_user.h $PREFIX/share/xezim/include/vpi_user.h
+
+    write_manifest sim-xezim
+    sh /opt/strip-runtime.sh $PREFIX
+
+Bootstrap: docker
+From: ubuntu:24.04
+Stage: final
+
+%files from build
+    /opt/dftools /opt/dftools
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libstdc++6 libgcc-s1
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/dftools/bin:$PATH
+    export LD_LIBRARY_PATH=/opt/dftools/lib:/opt/dftools/lib64:$LD_LIBRARY_PATH
+
+%labels
+    org.opencontainers.image.title DFTools/sim-xezim
+    org.opencontainers.image.source https://github.com/DFiantHDL/DFTools
+    org.opencontainers.image.licenses Apache-2.0
+
+%runscript
+    exec "$@"
+
+%test
+    set -e
+    export PATH=/opt/dftools/bin:$PATH
+    xezim -V

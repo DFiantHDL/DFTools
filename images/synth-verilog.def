@@ -1,5 +1,7 @@
 # DFTools image: synth-verilog
 # Yosys Verilog/SystemVerilog synthesis (no VHDL/ghdl, so no LLVM) + eqy.
+# As of v0.68 yosys is CMake-only and bundles the slang SV frontend in-tree (read_slang),
+# so there is no separate yosys-slang plugin build anymore.
 # Multi-stage: heavy build stage -> minimal runtime stage (only /opt/dftools + runtime libs).
 
 Bootstrap: docker
@@ -25,15 +27,20 @@ Stage: build
     rm -rf /var/lib/apt/lists/*
     . /opt/common.sh
 
-    # Yosys (--recursive pins bundled ABC via Yosys's submodule)
+    # Yosys (CMake-only since v0.68). --recursive pins bundled ABC plus the slang
+    # frontend + third-party submodules via Yosys's own pins; USE_BUNDLED_LIBS keeps
+    # the build on those pinned submodules instead of floating system libraries.
+    # INSTALL_LIBRARY=ON: libyosys is a shared lib by default and the yosys driver
+    # links it, so it must be installed alongside (yosys-config/plugins need it too).
     clone https://github.com/YosysHQ/yosys "$YOSYS_REV" yosys --recursive
-    ( cd /src/yosys && make config-gcc \
-        && make -j"$NPROC" PREFIX=$PREFIX ENABLE_LIBYOSYS=1 \
-        && make install PREFIX=$PREFIX )
-
-    # yosys-slang: SystemVerilog frontend plugin (bundles slang). VALIDATE: ABI vs YOSYS_REV.
-    clone https://github.com/povik/yosys-slang "$YOSYS_SLANG_REV" yosys-slang --recursive
-    ( cd /src/yosys-slang && make -j"$NPROC" install )
+    ( cd /src/yosys \
+        && cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$PREFIX \
+            -DYOSYS_INSTALL_LIBRARY=ON \
+            -DYOSYS_USE_BUNDLED_LIBS=ON \
+        && cmake --build build --parallel "$NPROC" \
+        && cmake --install build --strip )
 
     # eqy: equivalence-checking driver around yosys (Python + small helper)
     clone https://github.com/YosysHQ/eqy "$EQY_REV" eqy
@@ -74,5 +81,5 @@ Stage: final
     set -e
     export PATH=/opt/dftools/bin:$PATH
     yosys -V
-    yosys -m slang -p 'help read_slang' >/dev/null
+    yosys -p 'help read_slang' >/dev/null
     eqy --version || true

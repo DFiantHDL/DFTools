@@ -15,7 +15,7 @@ ALL="synth-verilog synth-vhdl pnr sim-llvm sim-verilator sim-iverilog sim-xezim 
 pin_images() {  # map a pins.env key to the image(s) that consume it
   case "$1" in
     YOSYS_REV)                          echo "synth-verilog synth-vhdl" ;;
-    YOSYS_SLANG_REV|EQY_REV)            echo "synth-verilog" ;;
+    EQY_REV)                            echo "synth-verilog" ;;
     GHDL_SYNTH_REV|GHDL_YOSYS_PLUGIN_REV) echo "synth-vhdl" ;;
     NEXTPNR_REV|PRJTRELLIS_REV|APICULA_REV) echo "pnr" ;;
     NVC_REV|GHDL_SIM_REV)               echo "sim-llvm" ;;

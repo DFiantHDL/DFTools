@@ -17,7 +17,7 @@ rebuilds the smallest possible image:
 
 | image | tools | notes |
 |---|---|---|
-| **synth-verilog** | yosys (+ yosys-slang SV frontend), eqy | no VHDL/LLVM — stays lean |
+| **synth-verilog** | yosys (in-tree slang SV frontend), eqy | no VHDL/LLVM — stays lean |
 | **synth-vhdl** | yosys + ghdl (frontend) + ghdl-yosys-plugin | `yosys -m ghdl`; carries LLVM |
 | **pnr** | nextpnr-ecp5, nextpnr-himbaechel, ecppack, gowin_pack | consumes yosys JSON |
 | **sim-llvm** | nvc + ghdl (simulator) | the two VHDL sims share one LLVM |

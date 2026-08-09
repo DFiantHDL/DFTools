@@ -33,11 +33,19 @@ Stage: build
     ( cd /src/ghdl && ./configure --prefix=$PREFIX --with-llvm-config="$LLVM_CONFIG" \
         && make -j"$NPROC" && make install )
 
-    # Yosys
+    # Yosys (CMake-only since v0.68; see synth-verilog.def for the flag rationale).
+    # WITHOUT_SLANG: the bundled slang SV frontend stays out of this image — SV synthesis
+    # lives in synth-verilog; skipping it keeps the LLVM-carrying image leaner.
     clone https://github.com/YosysHQ/yosys "$YOSYS_REV" yosys --recursive
-    ( cd /src/yosys && make config-gcc \
-        && make -j"$NPROC" PREFIX=$PREFIX ENABLE_LIBYOSYS=1 \
-        && make install PREFIX=$PREFIX )
+    ( cd /src/yosys \
+        && cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$PREFIX \
+            -DYOSYS_INSTALL_LIBRARY=ON \
+            -DYOSYS_USE_BUNDLED_LIBS=ON \
+            -DYOSYS_WITHOUT_SLANG=ON \
+        && cmake --build build --parallel "$NPROC" \
+        && cmake --install build --strip )
 
     # GHDL-Yosys plugin -> installs ghdl.so into Yosys's plugin dir (under $PREFIX).
     # VALIDATE: plugin ABI must match YOSYS_REV; bump GHDL_YOSYS_PLUGIN_REV if it fails.

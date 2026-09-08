@@ -62,13 +62,6 @@ jobs:
       matrix:
         image: ${{ fromJson(needs.detect.outputs.images) }}
         arch: [ linux-x64, linux-arm64 ]
-        exclude:
-          # TEMPORARY: xezim 0.9.8 does not compile on aarch64 (hardcoded *const i8
-          # where c_char is u8) — see https://github.com/aionhw/xezim/issues/105.
-          # Drop this exclude once upstream fixes it and the XEZIM_* pins are bumped;
-          # until then sim-xezim releases as linux-x64 only.
-          - image: sim-xezim
-            arch: linux-arm64
         include:
           - arch: linux-x64
             runs-on: ubuntu-24.04

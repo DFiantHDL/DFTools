@@ -24,7 +24,7 @@ rebuilds the smallest possible image:
 | **sim-llvm** | nvc + ghdl (simulator) | the two VHDL sims share one LLVM |
 | **sim-verilator** | verilator (+ g++/make/perl) | keeps a C++ build env at runtime¹ |
 | **sim-iverilog** | iverilog, vvp | small, self-contained |
-| **sim-xezim** | xezim | Rust SV simulator; built in lockstep with xezim-core; linux-x64 only until [aionhw/xezim#105](https://github.com/aionhw/xezim/issues/105) |
+| **sim-xezim** | xezim | Rust SV simulator; built in lockstep with xezim-core |
 | **wavegen** | surfer, gtkwave (+ vcd2fst/fst2vcd/… converters), wavecrux³ | GUI; X11-forwarded |
 | **program** | openFPGALoader | small |
 | **hmi** | ffmpeg, fpga-isv | media + interactive-sim viewer GUI (X11); single-stage² |

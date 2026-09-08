@@ -1,6 +1,6 @@
 //> using scala 3.8.4
-//> using dep io.github.dfiantworks::scalapptainer:0.2.1
-//> using dep com.lihaoyi::os-lib:0.11.4
+//> using dep io.github.dfiantworks::scalapptainer:0.5.4
+//> using dep com.lihaoyi::os-lib:0.11.8
 
 // Validate DFTools images before they are published. Two modes:
 //

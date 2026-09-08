@@ -4,6 +4,7 @@ name: build-test-release
 #
 #   detect (which images changed)
 #     -> build-test (only affected images x arch; per-image self-test)
+#     -> chipdb (only when pnr-xilinx was rebuilt: a chipdb is only valid for that build)
 #     -> dfhdl-gate (DFHDL latest release + main, against the freshly built images)
 #     -> publish (only on a version tag or manual dispatch, and only if the gate passed)
 #
@@ -108,6 +109,49 @@ jobs:
             dftools-${{ matrix.image }}-${{ matrix.arch }}.MANIFEST.txt
           retention-days: 7
 
+  # The nextpnr-xilinx chip databases are a pure function of NEXTPNR_XILINX_REV + PRJXRAY_DB_REV,
+  # i.e. of the pnr-xilinx image, so they are regenerated exactly when that image is rebuilt and
+  # never otherwise. Carrying the previous lockfile's chipdbs forward past a nextpnr-xilinx bump
+  # would be silently wrong: nextpnr asserts that a chipdb's interned IdString table matches its
+  # own constids.inc and refuses one built by another revision.
+  # A publish that does not rebuild pnr-xilinx skips this job and keeps the prior chipdb entries,
+  # which is correct precisely because the revisions did not move.
+  chipdb:
+    needs: [ detect, build-test ]
+    if: contains(needs.detect.outputs.images, 'pnr-xilinx')
+    runs-on: ubuntu-24.04
+    # The parts published today take about a minute each (xc7a35t 46 s, xc7a100t 76 s, measured
+    # with the image's plain CPython), but upstream reports hours on the large zynq/virtex
+    # footprints, so the cap is set well under GitHub's 6 h hosted-runner limit rather than tight.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+      # The .bba intermediate is ~0.5 GB for the parts published today, tens of GB on the largest.
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@main
+        with: { tool-cache: true, large-packages: true, docker-images: true }
+      - name: Setup Apptainer
+        run: |
+          set -eux
+          sudo add-apt-repository -y ppa:apptainer/ppa
+          sudo apt-get update
+          sudo apt-get install -y apptainer
+      - name: Setup JDK + Scala CLI
+        uses: VirtusLab/scala-cli-setup@v1
+        with: { jvm: 'temurin:21' }
+      # A chipdb is byte-identical on every platform, so one arch generates the set for both.
+      - uses: actions/download-artifact@v8
+        with: { name: dftools-pnr-xilinx-linux-x64, path: dist }
+      - name: Generate chip databases
+        run: scala-cli run scripts/chipdb.sc -- dist/dftools-pnr-xilinx-linux-x64.sif chipdb
+      - uses: actions/upload-artifact@v8
+        with:
+          name: dftools-chipdbs
+          path: |
+            chipdb/dftools-chipdb-*.bin.gz
+            chipdb/dftools-chipdb-*.bin.sha256
+          retention-days: 7
+
   dfhdl-gate:
     needs: build-test
     strategy:
@@ -159,8 +203,13 @@ jobs:
     # so freshly built images can be released and used to debug. Publish depends only on a
     # successful build-test; the dfhdl-gate still runs for visibility but does not block.
     # Restore `needs: dfhdl-gate` once the gate is green.
-    needs: build-test
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    needs: [ build-test, chipdb ]
+    # `chipdb` is skipped whenever pnr-xilinx was not rebuilt, and a skipped dependency would
+    # otherwise skip this job too, so its result is checked explicitly.
+    if: |
+      !cancelled() && needs.build-test.result == 'success'
+      && (needs.chipdb.result == 'success' || needs.chipdb.result == 'skipped')
+      && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish))
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -173,9 +222,10 @@ jobs:
       - name: Setup JDK + Scala CLI
         uses: VirtusLab/scala-cli-setup@v1.15.0
         with: { jvm: 'temurin:21' }
-      # Rename the built sifs to immutable, content-addressed asset names and (re)generate the
-      # lockfile mapping each image+arch to its sha256 + asset. Seeded from the prior lockfile on
-      # the tag, so a partial re-publish carries unchanged images forward.
+      # Rename the built sifs and chip databases to immutable, content-addressed asset names and
+      # (re)generate the lockfile mapping each image+arch (and each chipdb part) to its sha256 +
+      # asset. Seeded from the prior lockfile on the tag, so a partial re-publish carries unchanged
+      # images (and the chipdb set, when this run did not regenerate it) forward.
       - name: Build lockfile + immutable asset names
         run: scala-cli run scripts/lockfile.sc -- ${{ steps.ver.outputs.tag }} dist
       # Attach the immutable per-image sifs + the lockfile to the release tag. Immutable names never
@@ -190,4 +240,6 @@ jobs:
             dist/*.sif
             dist/*.sif.sha256
             dist/*.MANIFEST.txt
+            dist/dftools-chipdb-*.bin.gz
+            dist/dftools-chipdb-*.bin.sha256
             dist/dftools.lock.json

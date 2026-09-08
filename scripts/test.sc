@@ -21,6 +21,11 @@ val probes: Map[String, Seq[Seq[String]]] = Map(
   "synth-vhdl"    -> Seq(Seq("ghdl", "version"), Seq("yosys", "-V"),
                          Seq("yosys", "-m", "ghdl", "-p", "help ghdl")),
   "pnr"           -> Seq(Seq("nextpnr-ecp5", "--version"), Seq("nextpnr-himbaechel", "--version")),
+  "pnr-xilinx"    -> Seq(Seq("nextpnr-xilinx", "--version"), Seq("fasm2frames", "--help"),
+                         Seq("sh", "-c", "command -v bbasm xc7frames2bit"),
+                         // the bit database and the chipdb generator inputs must both ship
+                         Seq("sh", "-c", "test -d $PRJXRAY_DB_DIR/artix7"),
+                         Seq("sh", "-c", "test -f $NEXTPNR_XILINX_PYTHON_DIR/bbaexport.py")),
   "sim-llvm"      -> Seq(Seq("ghdl", "version"), Seq("nvc", "--version")),
   "sim-verilator" -> Seq(Seq("verilator", "--version"), Seq("sh", "-c", "command -v g++ make perl")),
   "sim-iverilog"  -> Seq(Seq("iverilog", "-V")),

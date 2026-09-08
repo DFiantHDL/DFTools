@@ -9,7 +9,8 @@
 //
 // The lockfile (`dftools.lock.json`) is the umbrella release tag's ONLY version-keyed
 // artifact: it maps each image+arch to the sha256 of its sif and the immutable asset that
-// carries those exact bytes. Everything downstream (DFHDL's resolver, its on-disk cache) keys
+// carries those exact bytes, and does the same for the nextpnr-xilinx chip databases in a
+// sibling `chipdbs` section. Everything downstream (DFHDL's resolver, its on-disk cache) keys
 // on that sha256, never on the tag — so bumping the tag re-downloads only the image(s) whose
 // digest actually changed, never the rest of the set.
 //
@@ -19,6 +20,11 @@
 //     embeds the digest: `dftools-<image>-<arch>-<sha12>.<ext>` (a different digest is a
 //     different file, so a published asset is never mutated in place — old tags stay valid),
 //   * records `{ sha256, asset }` under `images.<image>.<arch>` in the lockfile.
+//
+// Chip databases (`scripts/chipdb.sc`; `dftools-chipdb-<base-part>.bin.gz` plus a `.bin.sha256`
+// sidecar) get the same treatment under `chipdbs.<base-part>`, with two differences: a chipdb is
+// byte-identical on every platform, so it is not keyed by arch, and it is published gzipped while
+// the recorded digest is of the DECOMPRESSED bytes, which is what DFHDL caches and verifies.
 //
 // The lockfile is seeded from the prior lockfile already on <tag> (best-effort over the
 // network), so a partial re-publish (workflow_dispatch with only some images rebuilt) carries
@@ -63,6 +69,27 @@ os.list(distDir).filter(p => sifRe.matches(p.last)).sortBy(_.last).foreach { sif
   val entry = ujson.Obj("sha256" -> sha, "asset" -> s"$base.sif")
   images.getOrElseUpdate(image, ujson.Obj()).obj(arch) = entry
   println(s"[dftools-lock] $image/$arch -> $base.sif")
+}
+
+// 3. Overlay every freshly generated chipdb, the same way. `chipdbs` is created on demand, so a
+// release with no chipdb job simply has no such section (DFHDL reads that as "no published parts"
+// and says so by name).
+val chipdbRe = raw"dftools-chipdb-(.+)\.bin\.gz".r
+val chipdbs = lock.value.getOrElseUpdate("chipdbs", ujson.Obj()).obj
+os.list(distDir).filter(p => chipdbRe.matches(p.last)).sortBy(_.last).foreach { gz =>
+  val chipdbRe(basePart) = (gz.last: @unchecked)
+  val bin = gz.last.stripSuffix(".gz")
+  val shaFile = distDir / s"$bin.sha256"
+  require(os.exists(shaFile), s"missing checksum for ${gz.last}: $shaFile")
+  val sha = os.read(shaFile).trim.split("\\s+").head
+  val base = s"dftools-chipdb-$basePart-${sha.take(12)}.bin"
+
+  os.move(gz, distDir / s"$base.gz", replaceExisting = true)
+  os.write.over(distDir / s"$base.sha256", s"$sha  $base\n")
+  os.remove(shaFile)
+
+  chipdbs(basePart) = ujson.Obj("sha256" -> sha, "asset" -> s"$base.gz")
+  println(s"[dftools-lock] chipdb $basePart -> $base.gz")
 }
 
 os.write.over(distDir / "dftools.lock.json", ujson.write(lock, indent = 2))
